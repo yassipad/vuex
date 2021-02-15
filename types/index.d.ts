@@ -3,31 +3,36 @@ import { App, WatchOptions, InjectionKey } from "vue";
 // augment typings of Vue.js
 import "./vue";
 
-import { mapState, mapMutations, mapGetters, mapActions, createNamespacedHelpers } from "./helpers";
+import { mapState, mapMutations, mapGetters, mapActions, createNamespacedHelpers, NamespacedModuleKeys } from "./helpers";
 import { createLogger } from "./logger";
 
 export * from "./helpers";
 export * from "./logger";
 
-export declare class Store<S> {
-  constructor(options: StoreOptions<S>);
+export declare class Store<
+S,
+G extends GetterTree<S, S, G, G>,
+A extends ActionTree<S, S, G, A, M, Modules>,
+M extends MutationTree<S>,
+Modules extends ModuleTree<S, S, G, A, M, Modules>> {
+  constructor(options: StoreOptions<S, G, A, M, Modules>);
 
-  readonly state: S;
-  readonly getters: any;
+  readonly getters: AllGetters<G, Modules>;
+  readonly state: AllStates<S, Modules>;
 
-  install(app: App, injectKey?: InjectionKey<Store<any>> | string): void;
+  install(app: App, injectKey?: InjectionKey<Store<any, any, any, any, any>> | string): void;
 
   replaceState(state: S): void;
 
-  dispatch: Dispatch;
-  commit: Commit;
+  commit: Commit<M, Modules>;
+  dispatch: Dispatch<A, Modules>;
 
   subscribe<P extends MutationPayload>(fn: (mutation: P, state: S) => any, options?: SubscribeOptions): () => void;
   subscribeAction<P extends ActionPayload>(fn: SubscribeActionOptions<P, S>, options?: SubscribeOptions): () => void;
   watch<T>(getter: (state: S, getters: any) => T, cb: (value: T, oldValue: T) => void, options?: WatchOptions): () => void;
 
-  registerModule<T>(path: string, module: Module<T, S>, options?: ModuleOptions): void;
-  registerModule<T>(path: string[], module: Module<T, S>, options?: ModuleOptions): void;
+  registerModule<T>(path: string, module: Module<T, S, G, ActionTree<T, S, G, A, M, Modules>, M, Modules>, options?: ModuleOptions): void;
+  registerModule<T>(path: string[], module: Module<T, S, G, ActionTree<T, S, G, A, M, Modules>, M, Modules>, options?: ModuleOptions): void;
 
   unregisterModule(path: string): void;
   unregisterModule(path: string[]): void;
@@ -36,32 +41,38 @@ export declare class Store<S> {
   hasModule(path: string[]): boolean;
 
   hotUpdate(options: {
-    actions?: ActionTree<S, S>;
-    mutations?: MutationTree<S>;
-    getters?: GetterTree<S, S>;
-    modules?: ModuleTree<S>;
+    actions?: ActionTree<any, any, any, any, any, any>;
+    mutations?: MutationTree<any>;
+    getters?: GetterTree<any, any, any, any>;
+    modules?: ModuleTree<any, any, any, any, any, any>;
   }): void;
 }
 
 export const storeKey: string;
 
-export function createStore<S>(options: StoreOptions<S>): Store<S>;
+export function createStore<
+S,
+G extends GetterTree<S, S, G, G>,
+A extends ActionTree<S, S, G, A, M, Modules>,
+M extends MutationTree<S>,
+Modules extends ModuleTree<S, S, G, A, M, Modules>
+>(options: StoreOptions<S, G, A, M, Modules>): Store<S, G, A, M, Modules>;
 
-export function useStore<S = any>(injectKey?: InjectionKey<Store<S>> | string): Store<S>;
+export function useStore<S extends Store<any, any, any, any, any>>(injectKey?: InjectionKey<S> | string): S;
 
-export interface Dispatch {
-  (type: string, payload?: any, options?: DispatchOptions): Promise<any>;
-  <P extends Payload>(payloadWithType: P, options?: DispatchOptions): Promise<any>;
+export interface Dispatch<Actions extends ActionTree<any, any, any, any, any, any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
+  <Action extends keyof AllActionsWithParam<Actions, Modules>>(type: Action, payload: Parameters<AllActionsWithParam<Actions, Modules>[Action]>[1], options?: DispatchOptions): ReturnType<AllActionsWithParam<Actions, Modules>[Action]>;
+  <Action extends keyof AllActionsWithoutParam<Actions, Modules>>(type: Action, options?: DispatchOptions): ReturnType<AllActionsWithoutParam<Actions, Modules>[Action]>;
 }
 
-export interface Commit {
-  (type: string, payload?: any, options?: CommitOptions): void;
-  <P extends Payload>(payloadWithType: P, options?: CommitOptions): void;
+export interface Commit<Mutations extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
+  <Mutation extends keyof AllMutationsWithParam<Mutations, Modules>>(type: Mutation, payload: Parameters<AllMutationsWithParam<Mutations, Modules>[Mutation]>[1], options?: DispatchOptions): ReturnType<AllMutationsWithParam<Mutations, Modules>[Mutation]>;
+  <Mutation extends keyof AllMutationsWithoutParam<Mutations, Modules>>(type: Mutation, options?: CommitOptions): ReturnType<AllMutationsWithoutParam<Mutations, Modules>[Mutation]>;
 }
 
-export interface ActionContext<S, R> {
-  dispatch: Dispatch;
-  commit: Commit;
+export interface ActionContext<S, R, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
+  dispatch: Dispatch<A, Modules>;
+  commit: Commit<M, Modules>;
   state: S;
   getters: any;
   rootState: R;
@@ -104,55 +115,100 @@ export interface CommitOptions {
   root?: boolean;
 }
 
-export interface StoreOptions<S> {
+export interface StoreOptions<
+S,
+G extends GetterTree<S, S, G, G>,
+A extends ActionTree<S, S, G, A, M, Modules>,
+M extends MutationTree<S>,
+Modules extends ModuleTree<S, S, G, A, M, Modules>
+>  {
   state?: S | (() => S);
-  getters?: GetterTree<S, S>;
-  actions?: ActionTree<S, S>;
-  mutations?: MutationTree<S>;
-  modules?: ModuleTree<S>;
-  plugins?: Plugin<S>[];
+  getters?: G;
+  actions?: A;
+  mutations?: M;
+  modules?: Modules;
+  plugins?: Plugin<S, G, A, M, Modules>[];
   strict?: boolean;
   devtools?: boolean;
 }
 
-export type ActionHandler<S, R> = (this: Store<R>, injectee: ActionContext<S, R>, payload?: any) => any;
-export interface ActionObject<S, R> {
+export type ActionHandler<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> = (this: Store<R, G, A, M, Modules>, injectee: ActionContext<S, R, A, M, Modules>, payload?: any) => any;
+export interface ActionObject<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
   root?: boolean;
-  handler: ActionHandler<S, R>;
+  handler: ActionHandler<S, R, G, A, M, Modules>;
 }
 
-export type Getter<S, R> = (state: S, getters: any, rootState: R, rootGetters: any) => any;
-export type Action<S, R> = ActionHandler<S, R> | ActionObject<S, R>;
+export type Getter<S, R, G, RG> = (state: S, getters: G, rootState: R, rootGetters: RG) => any;
+export type Action<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> = ActionHandler<S, R, G, A, M, Modules> | ActionObject<S, R, G, A, M, Modules>;
 export type Mutation<S> = (state: S, payload?: any) => any;
-export type Plugin<S> = (store: Store<S>) => any;
+export type Plugin<S, G extends GetterTree<any, any, any, any>, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> = (store: Store<S, G, A, M, Modules>) => any;
 
-export interface Module<S, R> {
+export interface Module<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<S, R, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
   namespaced?: boolean;
   state?: S | (() => S);
-  getters?: GetterTree<S, R>;
-  actions?: ActionTree<S, R>;
+  getters?: GetterTree<S, R, G, G>;
+  actions?: ActionTree<S, R, G, A, M, Modules>;
   mutations?: MutationTree<S>;
-  modules?: ModuleTree<R>;
+  modules?: ModuleTree<S, R, G, A, M, Modules>;
 }
 
 export interface ModuleOptions {
   preserveState?: boolean;
 }
 
-export interface GetterTree<S, R> {
-  [key: string]: Getter<S, R>;
+export interface GetterTree<S, R, G extends GetterTree<any, any, any, any>, RG extends GetterTree<any, any, any, any>> {
+  [key: string]: Getter<S, R, G, RG>;
 }
 
-export interface ActionTree<S, R> {
-  [key: string]: Action<S, R>;
+export interface ActionTree<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<any, any, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
+  [key: string]: Action<S, R, G, A, M, Modules>;
 }
 
 export interface MutationTree<S> {
   [key: string]: Mutation<S>;
 }
 
-export interface ModuleTree<R> {
-  [key: string]: Module<any, R>;
+export interface ModuleTree<S, R, G extends GetterTree<any, any, any, any>, A extends ActionTree<S, R, any, any, any, any>, M extends MutationTree<any>, Modules extends ModuleTree<any, any, any, any, any, any>> {
+  [key: string]: Module<S, R, G, A, M, Modules>;
+}
+
+
+type AllMutations<Mutations extends MutationTree<any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = { 
+  [K in keyof Mutations]: Mutations[K] 
+} & {
+  [K in keyof NamespacedModuleKeys<Modules, 'mutations'>]:  NamespacedModuleKeys<Modules, 'mutations'>[K] extends (...args: any) => any ?  NamespacedModuleKeys<Modules, 'mutations'>[K] : never
+}
+
+type AllMutationsWithParam<Mutations extends MutationTree<any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = {
+  [K in keyof AllMutations<Mutations, Modules> as Parameters<AllMutations<Mutations, Modules>[K]>[1] extends undefined ? never : K]: AllMutations<Mutations, Modules>[K]
+}
+
+type AllMutationsWithoutParam<Mutations extends MutationTree<any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = {
+  [K in keyof AllMutations<Mutations, Modules> as Parameters<AllMutations<Mutations, Modules>[K]>[1] extends undefined ? K : never]: AllMutations<Mutations, Modules>[K]
+}
+
+type AllActions<Actions extends ActionTree<any, any, any, any, any, any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = { 
+  [K in keyof Actions]: Actions[K] 
+} & {
+  [K in keyof NamespacedModuleKeys<Modules, 'actions'>]:  NamespacedModuleKeys<Modules, 'actions'>[K] extends (...args: any) => any ?  NamespacedModuleKeys<Modules, 'actions'>[K] : never
+}
+
+type AllActionsWithParam<Actions extends ActionTree<any, any, any, any, any, any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = {
+  [K in keyof AllActions<Actions, Modules> as Parameters<AllActions<Actions, Modules>[K]>[1] extends undefined ? never : K]: AllActions<Actions, Modules>[K]
+}
+
+type AllActionsWithoutParam<Actions extends ActionTree<any, any, any, any, any, any>, Modules extends  ModuleTree<any, any, any, any, any, any>> = {
+  [K in keyof AllActions<Actions, Modules> as Parameters<AllActions<Actions, Modules>[K]>[1] extends undefined ? K : never]: AllActions<Actions, Modules>[K]
+}
+
+type AllGetters<Getters extends GetterTree<any, any, any, any>, Modules extends ModuleTree<any, any, any, any, any, any>> = { 
+  readonly [K in keyof Getters]: ReturnType<Getters[K]> 
+} & {
+  readonly [K in keyof NamespacedModuleKeys<Modules, 'getters'>]: NamespacedModuleKeys<Modules, 'getters'>[K] extends (...args: any) => any ? ReturnType<NamespacedModuleKeys<Modules, 'getters'>[K]> : never
+}
+
+type AllStates<State extends any, Modules extends ModuleTree<any, any, any, any, any, any>> = State & {
+  [K in keyof Modules]: Modules[K]['state'] extends (...args: any) => any ? ReturnType<Modules[K]['state']> : Modules[K]['state']
 }
 
 declare const _default: {
